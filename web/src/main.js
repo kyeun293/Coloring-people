@@ -76,9 +76,29 @@ async function init() {
   ui.setStatus('loading', 'MediaPipe 로딩중...');
 
   // 카메라 스트림
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: 1280, height: 720, facingMode: 'user' }
-  });
+  // 16:9 해상도를 순서대로 시도 (일부 웹캠은 특정 해상도에서 NotReadableError)
+  // 전부 실패하면 기본값(보통 640x480, 4:3)
+  const CANDIDATES = [[1280, 720], [1920, 1080], [960, 540], [848, 480], [640, 360]];
+  let stream = null;
+  for (const [w, h] of CANDIDATES) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { exact: w }, height: { exact: h }, facingMode: 'user' }
+      });
+      break;
+    } catch (err) {
+      console.warn(`[HANDSEAL] 카메라 ${w}x${h} 실패:`, err.name);
+    }
+  }
+  if (!stream) stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const st = stream.getVideoTracks()[0].getSettings();
+  console.log(`[HANDSEAL] 카메라 ${st.width}x${st.height}, 화면 ${window.innerWidth}x${window.innerHeight}`);
+  // 카메라가 줌을 지원하면 최소(가장 넓은 화각)로
+  const track = stream.getVideoTracks()[0];
+  const caps  = track.getCapabilities?.() ?? {};
+  if (caps.zoom) {
+    track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(() => {});
+  }
   video.srcObject = stream;
   await new Promise(res => { video.onloadedmetadata = () => video.play().then(res); });
 

@@ -46,17 +46,20 @@ export class AREffectEngine {
   // ── 랜드마크 좌표 → 캔버스 픽셀 변환 ─────────────────
   // video와 canvas 모두 scaleX(-1) 되어 있으므로
   // x 반전 없이 그대로 쓰면 됨
-  _lx(lm, W) {
-    const video = this.video;
-    const scale = Math.max(W / video.videoWidth, this.canvas.height / video.videoHeight);
-    const offsetX = (W - video.videoWidth * scale) / 2;
-    return (1 - lm.x) * video.videoWidth * scale + offsetX;
+  // object-fit: cover 와 동일한 영상 표시 영역
+  _videoRect() {
+    const v = this.video, W = this.canvas.width, H = this.canvas.height;
+    const scale = Math.max(W / v.videoWidth, H / v.videoHeight);
+    const w = v.videoWidth * scale, h = v.videoHeight * scale;
+    return { x: (W - w) / 2, y: (H - h) / 2, w, h };
   }
-  _ly(lm, H) {
-    const video = this.video;
-    const scale = Math.max(this.canvas.width / video.videoWidth, H / video.videoHeight);
-    const offsetY = (H - video.videoHeight * scale) / 2;
-    return lm.y * video.videoHeight * scale + offsetY;
+  _lx(lm) {
+    const r = this._videoRect();
+    return (1 - lm.x) * r.w + r.x;
+  }
+  _ly(lm) {
+    const r = this._videoRect();
+    return lm.y * r.h + r.y;
   }
 
   // 손바닥 중심 (landmark 9 = 중지 MCP)
@@ -209,7 +212,9 @@ export class AREffectEngine {
       ctx.globalAlpha = alpha;
       ctx.filter      = `hue-rotate(${hue}deg) brightness(1.2)`;
       // 크롭 없이 동일 크기로, x만 이동
-      ctx.drawImage(video, dx, 0, W, H);
+      const r = this._videoRect();
+      ctx.translate(W, 0); ctx.scale(-1, 1); // 화면 영상과 같은 거울 반전
+      ctx.drawImage(video, r.x - dx, r.y, r.w, r.h);
       ctx.restore();
     });
 

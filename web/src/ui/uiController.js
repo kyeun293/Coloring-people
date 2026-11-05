@@ -32,15 +32,18 @@ export class UIController {
     this.collectPanel = document.getElementById('collect-panel');
   }
   setJutsu(jutsu) {
+    if (!this.jutsuEl) return;
     this.jutsuEl.textContent = JUTSU_KO[jutsu] ?? jutsu;
     this.jutsuEl.style.color = JUTSU_COLOR[jutsu] ?? '#fff';
   }
   setConfidence(pct) {
+    if (!this.confBar) return;
     this.confBar.style.width      = `${pct}%`;
     this.confLabel.textContent    = `${pct}%`;
     this.confBar.style.background = pct > 80 ? '#8b5cf6' : pct > 50 ? '#f6e05e' : '#4a5568';
   }
   setStatus(type, text) {
+    if (!this.statusEl) return;
     this.statusEl.textContent = text;
     this.pillEl.className     = `pill ${type}`;
   }

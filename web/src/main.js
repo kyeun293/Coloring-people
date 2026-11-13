@@ -5,8 +5,9 @@ import { GestureClassifier } from './core/gestureClassifier.js';
 import { UIController }      from './ui/uiController.js';
 import { DataCollector }     from './core/dataCollector.js';
 import { AREffectEngine }    from './effects/arEffectEngine.js';
+import { ColoringMode }      from './coloring/coloringMode.js';
 
-const state = { mode: 'demo', currentJutsu: 'none' };
+const state = { mode: 'coloring', currentJutsu: 'none' };
 
 const video  = document.getElementById('input-video');
 const canvas = document.getElementById('main-canvas');
@@ -16,6 +17,8 @@ const ui        = new UIController(state);
 const classifier = new GestureClassifier();
 const arFx      = new AREffectEngine(canvas, ctx);
 const collector = new DataCollector(onCollectorState);
+const coloring  = new ColoringMode(canvas, ctx, video);
+coloring.enabled = state.mode === 'coloring';
 window._collector = collector;
 
 function resizeCanvas() {
@@ -150,6 +153,11 @@ async function init() {
     const landmarks  = handResult.landmarks;
     const handedness = handResult.handednesses;
 
+    if (state.mode === 'coloring') {
+      coloring.update(landmarks, now);
+      return;
+    }
+
     const normalized = normalize(landmarks, handedness);
 
     if (state.mode === 'collect') {
@@ -250,6 +258,8 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     state.mode = btn.dataset.mode;
+    coloring.enabled = state.mode === 'coloring';
+    coloring.reset();
     ui.onModeChange(state.mode);
   });
 });

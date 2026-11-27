@@ -24,12 +24,14 @@ MediaPipe로 손 랜드마크를 실시간 추적하고, 캡쳐한 이미지를 
 | 시작·종료 모션 | 학습된 제스처 분류기 또는 규칙 기반 판별 (모션 종류는 미정) |
 | 캡쳐 | 카운트다운 후 비디오 프레임의 일정 영역을 캔버스로 잘라냄 |
 | 색칠판 + 팔레트 | 블러 → **k-means로 색을 K개(6~8개)로 단순화** → 같은 색끼리 붙은 영역을 구역으로 나누고 작은 구역은 이웃에 병합 → 구역 경계만 검은 선, 나머지는 흰색 |
+| 엣지 보정 | **직접 학습한 엣지 모델(TEED, BSDS500)** 로 경계 확률을 구해서, 확실한 경계는 같은 색이어도 구역을 자르고, 모델이 경계가 아니라고 본 색 경계(그림자·조명)는 합침. 강한 선(눈·입 등)은 장식선으로 추가 |
 | 팔레트 색상 | k-means로 나온 K개 대표색을 그대로 사용 |
 | 색 집기 | 엄지 끝(랜드마크 4)과 검지 끝(8) 사이 거리가 임계값 이하면 "집음" |
 | 채우기 | 손을 뗀 위치가 속한 구역 번호를 찾아 그 구역 전체를 선택한 색으로 칠함 |
 
 > 💡 Canny 같은 윤곽선 검출만 쓰면 선이 중간중간 끊겨서, 칠할 때 색이 새어 나갑니다.
 > 구역 분할로 만든 경계선은 항상 닫혀 있어서 색이 샐 일이 없습니다.
+> 학습된 엣지 모델도 선을 직접 그리는 대신 구역을 자르고 합치는 데만 쓰므로 이 성질이 유지됩니다.
 
 ## 기술 스택
 
@@ -44,9 +46,13 @@ MediaPipe로 손 랜드마크를 실시간 추적하고, 캡쳐한 이미지를 
 .
 ├── web/                # 프론트엔드 (정적 서버로 실행)
 │   ├── index.html
-│   ├── models/         # handseal.onnx, labels.json (학습 후 자동 복사)
+│   ├── models/         # handseal.onnx, labels.json, edge.onnx (학습 후 자동 복사)
 │   └── src/
 │       ├── main.js                 # 카메라, MediaPipe, 메인 루프
+│       ├── coloring/
+│       │   ├── coloringMode.js       # 색칠 모드 상태·화면
+│       │   ├── coloringBook.js       # 캡쳐 → 구역/선/팔레트
+│       │   └── edgeModel.js          # 엣지 모델(edge.onnx) 추론
 │       ├── core/
 │       │   ├── gestureClassifier.js  # ONNX 제스처 분류
 │       │   └── dataCollector.js      # 학습 데이터 녹화/CSV 저장
@@ -57,6 +63,8 @@ MediaPipe로 손 랜드마크를 실시간 추적하고, 캡쳐한 이미지를 
 │           └── style.css
 └── ml/
     ├── train.py        # CSV → 정규화 → 증강 → MLP 학습 → ONNX 변환
+    ├── edge_model.py   # TEED 엣지 검출 모델 구조
+    ├── train_edge.py   # BSDS500 → 증강 → TEED 학습 → 평가 → ONNX 변환
     ├── data/raw/       # 수집한 CSV
     └── models/
 ```
@@ -94,3 +102,15 @@ python ml/train.py
 
 학습이 끝나면 `ml/models/handseal.onnx`가 생성되고 `web/models/`로 자동 복사됩니다. 새로고침하면 바로 반영됩니다.
 모델이 없으면 규칙 기반 fallback으로 동작합니다.
+
+### 4. 엣지 모델 학습 (색칠판 경계 품질)
+
+```bash
+git clone --depth 1 https://github.com/BIDS/BSDS500.git ml/data/edge/bsds_repo
+pip install torch scipy opencv-python-headless onnx onnxruntime numpy
+python3 ml/train_edge.py              # Apple Silicon(MPS) 기준 60에폭 약 20분
+python3 ml/train_edge.py --eval-only  # 저장된 edge.pt로 평가·내보내기만
+```
+
+`web/models/edge.onnx`(약 250KB)로 자동 복사됩니다. 테스트셋 200장 근사 F-score(허용오차 2px): **TEED 0.639** vs Sobel 0.431.
+`edge.onnx`가 없거나 로드에 실패하면 기존 색 기반 방식으로만 동작합니다.

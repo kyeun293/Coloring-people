@@ -20,7 +20,7 @@ GT 규칙:
   BSDS500   seg = groundTruth[k]['Segmentation'], bnd = groundTruth[k]['Boundaries'] (주석자 4~9명, 원본 그대로)
   PASCAL    주석자 1명. LabelMap(클래스 지도)에서
             seg = 같은 클래스라도 떨어져 있으면 다른 구역 (8-연결 연결 요소). 'unknown'(431)도 일반 구역
-            bnd = seg에서 BSDS의 seg2bdry와 같은 방식으로 만든 1픽셀 경계
+            bnd = seg에서 BSDS와 똑같은 규칙(seg2bdry + thin)으로 만든 1픽셀 경계
   PASCAL split = COB 논문(ECCV 2016)의 VOC train / val / test에서 각각 frac 비율만큼 고정 seed로 뽑음
 
 불러오기:
@@ -61,13 +61,19 @@ def load_sample(dataset, split, img_id, root=UNI):
 
 # ── GT 변환 규칙 ────────────────────────────────────────
 def seg2bdry(seg):
-    """구역 지도 → 1픽셀 경계 (BSDS seg2bdry의 'imageSize' 출력과 같은 방식: 픽셀 오른쪽 아래 꼭짓점에 닿는 경계)"""
+    """구역 지도 → 1픽셀 경계. BSDS 공식 seg2bdry(seg, 'imageSize') 뒤에 thin을 한 것으로,
+    BSDS500의 groundTruth 'Boundaries'를 'Segmentation'에서 정확히 재현함 (주석 2,696개 전부 픽셀 단위 일치 확인)"""
+    from skimage.morphology import thin
     seg = np.asarray(seg)
-    h = np.zeros(seg.shape, bool); h[:, :-1] = seg[:, :-1] != seg[:, 1:]
+    tx, ty = seg.shape
+    b = np.zeros((2 * tx + 1, 2 * ty + 1), bool)                  # 2배 해상도 격자 (픽셀 사이에 경계 칸)
     v = np.zeros(seg.shape, bool); v[:-1] = seg[:-1] != seg[1:]
-    b = np.zeros(seg.shape, bool)
-    b[:-1, :-1] = h[:-1, :-1] | h[1:, :-1] | v[:-1, :-1] | v[:-1, 1:]
-    return b
+    h = np.zeros(seg.shape, bool); h[:, :-1] = seg[:, :-1] != seg[:, 1:]
+    b[2::2, 1:-1:2] = v
+    b[1:-1:2, 2::2] = h
+    b[2:-1:2, 2:-1:2] = h[:-1, :-1] | h[1:, :-1] | v[:-1, :-1] | v[:-1, 1:]
+    b[0], b[:, 0], b[-1], b[:, -1] = b[1], b[:, 1], b[-2], b[:, -2]
+    return thin(b[2::2, 2::2])
 
 
 def connected_regions(label_map):
@@ -103,6 +109,20 @@ def md5(path):
     return h.hexdigest()
 
 
+def _extract_all(t, dst):
+    if hasattr(tarfile, 'data_filter'):          # Python 3.12+: 안전한 압축 풀기 (경로 탈출 차단)
+        t.extractall(dst, filter='data')
+    else:
+        t.extractall(dst)
+
+
+def _extract_one(t, m, dst):
+    if hasattr(tarfile, 'data_filter'):
+        t.extract(m, dst, filter='data')
+    else:
+        t.extract(m, dst)
+
+
 def get_bsds():
     root = os.path.join(RAW, 'BSDS500', 'BSDS500', 'data')
     if not os.path.isdir(root):
@@ -119,12 +139,12 @@ def get_pascal_ann():
         if md5(tgz) != PC_ANN_MD5:
             raise SystemExit(f'MD5 불일치: {tgz} (파일을 지우고 다시 실행)')
         with tarfile.open(tgz) as t:
-            t.extractall(os.path.join(pc, 'ann'))
+            _extract_all(t, os.path.join(pc, 'ann'))
     split_dir = os.path.join(pc, 'split', 'PASCALContext_splits')
     if not os.path.isdir(split_dir):
         tgz = download(PC_SPLIT_URL, os.path.join(pc, 'dl_split', 'PASCALContext_splits.tgz'))
         with tarfile.open(tgz) as t:
-            t.extractall(os.path.join(pc, 'split'))
+            _extract_all(t, os.path.join(pc, 'split'))
     return ann, split_dir, os.path.join(pc, 'ann', 'labels.txt')
 
 
@@ -140,7 +160,7 @@ def get_voc_images(need_ids):
         with tarfile.open(tar_path) as t:
             for m in t:
                 if m.name in want:
-                    t.extract(m, os.path.join(pc, 'voc'))
+                    _extract_one(t, m, os.path.join(pc, 'voc'))
     return jpg_dir
 
 

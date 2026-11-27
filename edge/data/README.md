@@ -10,6 +10,13 @@ edge detection(A)과 segmentation(B)이 **같은 데이터, 같은 형식, 같�
 | `evaluation.py` | **표준 평가 코드**: A용 ODS/OIS/AP, B용 SC/PRI/VI/F_b (+ 색칠공부 보조 지표) |
 | `splits/*.txt` | **팀 공용 고정 split 목록** (어떤 이미지를 train/val/test로 쓰는지). 이 목록을 바꾸지 마세요 |
 
+**한눈에 보기**
+- 데이터: BSDS500 500장 (200/100/200) + PASCAL-Context 5,052장 (2,499/1,304/1,249, COB split의 50%)
+- GT: `seg` 구역 지도 (B), `bnd` 1픽셀 경계 (A). PASCAL은 클래스 지도를 연결 요소로 나눠 만듦
+- 학습 라벨: 주석자 비율 (HED/RCF 관례), train에 augmentation 자동 적용
+- 평가: A = ODS/OIS/AP, B = SC/PRI/VI/F_b (BSDS 공식 방식)
+- 시작: `python edge/data/unified_data.py` → `EdgeDataset`, `iter_eval`, `EdgeEvaluator`, `SegEvaluator`
+
 ## 1. 만들기
 
 **Colab**

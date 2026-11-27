@@ -10,6 +10,8 @@
  */
 
 import { buildColoringBook } from './coloringBook.js';
+import { detectEdges, preloadEdgeModel } from './edgeModel.js';
+import { detectPerson, preloadPersonMask } from './personMask.js';
 import { isVSign, isFist, PinchDetector, HoldTrigger, videoRect, toScreen } from './gestures.js';
 
 const COUNTDOWN_MS   = 3000;
@@ -35,6 +37,8 @@ export class ColoringMode {
     this.endHold   = new HoldTrigger(1000);
     this.pinch     = new PinchDetector();
     this._bindMouse();
+    preloadEdgeModel();
+    preloadPersonMask();
     this.reset();
   }
 
@@ -136,11 +140,17 @@ export class ColoringMode {
     this.phase = 'building';
     const id = this.buildId;
     // "만드는 중" 화면이 한 번 그려진 뒤 처리 (처리 중에는 화면이 멈춤)
-    setTimeout(() => {
+    setTimeout(async () => {
       if (id !== this.buildId) return;
       const t0 = performance.now();
-      this.board = buildColoringBook(img);
-      console.log(`[coloring] 색칠판 생성 ${Math.round(performance.now() - t0)}ms, 팔레트 ${this.board.palette.length}색`);
+      // 학습된 엣지 모델 + 사람 분할 (각각 없으면 null → 그 단계만 건너뜀)
+      const [edges, person] = await Promise.all([detectEdges(img), detectPerson(off)]);
+      if (id !== this.buildId) return;
+      const t1 = performance.now();
+      this.board = buildColoringBook(img, { edges, person });
+      console.log(`[coloring] 엣지 모델 ${edges ? '사용' : '미사용'}, 사람 마스크 ${person ? '사용' : '미사용'} ` +
+                  `(${Math.round(t1 - t0)}ms), ` +
+                  `색칠판 생성 ${Math.round(performance.now() - t1)}ms, 팔레트 ${this.board.palette.length}색`);
       this.phase = 'coloring';
       this.ignoreUntil = performance.now() + 800;
     }, 30);
